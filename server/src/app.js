@@ -1,4 +1,4 @@
-// C:\Users\minjin\KMJ\server\src\app.js
+// CJS 버전 app.js (라우트 등록 담당)
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -10,31 +10,51 @@ const origins = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : t
 
 app.use(helmet());
 app.use(cors({ origin: origins, credentials: true }));
-app.use(express.json()); // ★ 반드시 라우트보다 먼저
+app.use(express.json());
 app.use(morgan('dev'));
 
-// 기본 헬스
-app.get('/api/health', (req, res) =>
-  res.json({ ok: true, time: new Date().toISOString() })
-);
+// 헬스체크
+app.get('/api/health', (req, res) => res.json({ ok: true, time: new Date().toISOString() }));
 
-// ★ 라우트 연결 — 이 3줄이 실제로 있어야 함
-const authRoutes = require('./routes/auth.routes');
-const subjectRoutes = require('./routes/subjects.routes');
-const noteRoutes = require('./routes/notes.routes');
+// ===== 라우트 연결 (여기서 반드시 등록) =====
+const authRoutes = require('./routes/auth.routes');         // 있으면 사용, 없으면 주석
+const subjectRoutes = require('./routes/subjects.routes');  // 있으면 사용, 없으면 주석
+const noteRoutes = require('./routes/notes.routes');        // 있으면 사용, 없으면 주석
+const quizRoutes = require('./routes/quizzes.routes');      // ★ 중요
 
-app.use('/api/auth', authRoutes);
-app.use('/api/subjects', subjectRoutes);
-app.use('/api/notes', noteRoutes);
+if (authRoutes)   app.use('/api/auth', authRoutes);
+if (subjectRoutes)app.use('/api/subjects', subjectRoutes);
+if (noteRoutes)   app.use('/api/notes', noteRoutes);
+app.use('/api/quizzes', quizRoutes); // 최소 이것 하나는 반드시
 
+// ===== 등록된 라우트 덤프 (안전 가드 버전) =====
+app.get('/api/_routes', (req, res) => {
+  try {
+    const list = [];
+    (app._router?.stack || []).forEach((layer) => {
+      // 직접 라우트
+      if (layer.route && layer.route.path) {
+        const methods = Object.keys(layer.route.methods || {}).map(m => m.toUpperCase());
+        list.push({ base: '', path: layer.route.path, methods });
+      }
+      // 하위 Router
+      else if (layer.name === 'router' && layer.handle && Array.isArray(layer.handle.stack)) {
+        const base = layer.regexp ? layer.regexp.toString() : '';
+        layer.handle.stack.forEach((sub) => {
+          if (sub.route && sub.route.path) {
+            const methods = Object.keys(sub.route.methods || {}).map(m => m.toUpperCase());
+            list.push({ base, path: sub.route.path, methods });
+          }
+        });
+      }
+    });
+    res.json({ routes: list });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
-const PORT = process.env.PORT || 4000;
-app.listen(PORT, () => console.log(`API running on :${PORT}`));
+// 404는 맨 마지막
+app.use((req, res) => res.status(404).json({ success: false, error: { message: 'Not Found' } }));
 
-const quizRoutes = require('./routes/quizzes.routes');
-app.use('/api/quizzes', quizRoutes);
-
-// 404
-app.use((req, res) =>
-  res.status(404).json({ success:false, error:{ message:'Not Found' } })
-);
+module.exports = app;

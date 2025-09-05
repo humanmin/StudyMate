@@ -9,3 +9,4 @@ router.get('/', auth, listSubjects);
 router.post('/', auth, createSubject);
 
 module.exports = router;
+
